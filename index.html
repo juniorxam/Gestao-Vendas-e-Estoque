@@ -1223,8 +1223,22 @@
                         <input type="number" id="produtoCusto" step="0.01" min="0">
                     </div>
                     <div class="form-group">
+                        <label for="produtoModoPreco">Como definir o preço de venda?</label>
+                        <select id="produtoModoPreco">
+                            <option value="direto">Informar preço de venda</option>
+                            <option value="lucro">Calcular por porcentagem de lucro</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label for="produtoPreco">Preço de Venda (R$)</label>
                         <input type="number" id="produtoPreco" step="0.01" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label for="produtoLucro">Porcentagem de lucro sobre o custo (%)</label>
+                        <input type="number" id="produtoLucro" step="0.01" min="0" placeholder="Ex.: 100">
+                    </div>
+                    <div class="form-group full-width">
+                        <small id="produtoPrecoAjuda" style="color: var(--text-muted);">Informe o preço que será cobrado do cliente.</small>
                     </div>
                     <div class="form-group full-width">
                         <label for="produtoDescricao">Descrição</label>
@@ -1910,6 +1924,7 @@
                     <p><strong>Categoria:</strong> ${produto.categoria}</p>
                     <p><strong>Custo:</strong> ${formatarMoeda(produto.custo)}</p>
                     <p><strong>Preço:</strong> ${formatarMoeda(produto.preco)}</p>
+                    ${produto.lucroPercentual > 0 ? `<p><strong>Lucro:</strong> ${produto.lucroPercentual.toFixed(2)}%</p>` : ''}
                     ${produto.quantidade <= produto.quantidadeMinima ? 
                         `<p class="alerta"><i class="fas fa-exclamation-triangle"></i> Estoque baixo!</p>` : ''}
                     <div class="action-buttons" style="margin-top: 10px;">
@@ -1926,6 +1941,35 @@
             });
         }
         
+        function atualizarCamposPrecoProduto() {
+            const modo = document.getElementById('produtoModoPreco').value;
+            const custo = parseFloat(document.getElementById('produtoCusto').value) || 0;
+            const precoInput = document.getElementById('produtoPreco');
+            const lucroInput = document.getElementById('produtoLucro');
+            const ajuda = document.getElementById('produtoPrecoAjuda');
+
+            if (modo === 'lucro') {
+                lucroInput.disabled = false;
+                precoInput.disabled = true;
+                const percentual = parseFloat(lucroInput.value) || 0;
+                precoInput.value = custo > 0 ? (custo * (1 + percentual / 100)).toFixed(2) : '';
+                ajuda.textContent = 'O preço é calculado como custo + a porcentagem informada.';
+            } else {
+                precoInput.disabled = false;
+                lucroInput.disabled = false;
+                const preco = parseFloat(precoInput.value) || 0;
+                lucroInput.value = custo > 0 && preco >= custo ? ((preco / custo - 1) * 100).toFixed(2) : '';
+                ajuda.textContent = 'Informe o preço que será cobrado do cliente. A porcentagem será calculada automaticamente.';
+            }
+        }
+
+        function configurarCamposPrecoProduto() {
+            document.getElementById('produtoModoPreco').addEventListener('change', atualizarCamposPrecoProduto);
+            document.getElementById('produtoCusto').addEventListener('input', atualizarCamposPrecoProduto);
+            document.getElementById('produtoLucro').addEventListener('input', atualizarCamposPrecoProduto);
+            document.getElementById('produtoPreco').addEventListener('input', atualizarCamposPrecoProduto);
+        }
+
         function abrirModalEstoque(produtoId = null) {
             const modal = document.getElementById('modalEstoque');
             modal.classList.add('active');
@@ -1941,7 +1985,10 @@
                     document.getElementById('produtoQuantidadeMinima').value = produto.quantidadeMinima;
                     document.getElementById('produtoCusto').value = produto.custo;
                     document.getElementById('produtoPreco').value = produto.preco;
+                    document.getElementById('produtoModoPreco').value = produto.modoPreco || 'direto';
+                    document.getElementById('produtoLucro').value = produto.lucroPercentual > 0 ? produto.lucroPercentual : '';
                     document.getElementById('produtoDescricao').value = produto.descricao || '';
+                    atualizarCamposPrecoProduto();
                 }
             } else {
                 // Modo adição
@@ -1951,8 +1998,11 @@
                 document.getElementById('produtoQuantidade').value = '0';
                 document.getElementById('produtoQuantidadeMinima').value = '5';
                 document.getElementById('produtoCusto').value = '';
+                document.getElementById('produtoModoPreco').value = 'direto';
                 document.getElementById('produtoPreco').value = '';
+                document.getElementById('produtoLucro').value = '';
                 document.getElementById('produtoDescricao').value = '';
+                atualizarCamposPrecoProduto();
             }
         }
         
@@ -1967,11 +2017,30 @@
             const quantidade = parseInt(document.getElementById('produtoQuantidade').value) || 0;
             const quantidadeMinima = parseInt(document.getElementById('produtoQuantidadeMinima').value) || 0;
             const custo = parseFloat(document.getElementById('produtoCusto').value) || 0;
-            const preco = parseFloat(document.getElementById('produtoPreco').value) || 0;
+            const modoPreco = document.getElementById('produtoModoPreco').value;
+            const lucroInformado = parseFloat(document.getElementById('produtoLucro').value) || 0;
+            const precoInformado = parseFloat(document.getElementById('produtoPreco').value) || 0;
+            const preco = modoPreco === 'lucro' ? custo * (1 + lucroInformado / 100) : precoInformado;
+            const lucroPercentual = custo > 0 && preco >= custo ? ((preco / custo - 1) * 100) : 0;
             const descricao = document.getElementById('produtoDescricao').value.trim();
             
             if (!nome) {
                 mostrarNotificacao('Nome do produto é obrigatório.', 'erro');
+                return;
+            }
+
+            if (custo < 0 || preco < 0 || lucroInformado < 0) {
+                mostrarNotificacao('Custo, preço e percentual de lucro não podem ser negativos.', 'erro');
+                return;
+            }
+
+            if (modoPreco === 'lucro' && custo <= 0) {
+                mostrarNotificacao('Informe um custo unitário maior que zero para calcular o preço por percentual.', 'erro');
+                return;
+            }
+
+            if (preco <= 0) {
+                mostrarNotificacao('Informe um preço de venda maior que zero.', 'erro');
                 return;
             }
             
@@ -1987,6 +2056,8 @@
                         quantidadeMinima,
                         custo,
                         preco,
+                        modoPreco,
+                        lucroPercentual,
                         descricao
                     };
                 }
@@ -2000,6 +2071,8 @@
                     quantidadeMinima,
                     custo,
                     preco,
+                    modoPreco,
+                    lucroPercentual,
                     descricao
                 };
                 estoque.push(novoProduto);
@@ -2522,6 +2595,7 @@
         }
 
         document.addEventListener('DOMContentLoaded', function() {
+            configurarCamposPrecoProduto();
             checkInitializers();
             
             // Configura data mínima para os date inputs
